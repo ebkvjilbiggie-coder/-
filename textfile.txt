@@ -1,0 +1,357 @@
+-- Services
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+
+-- CONFIGURATION
+local GROQ_API_KEY = "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"
+local GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+-- Executor HTTP Request Resolver
+local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request or (Fluxus and Fluxus.request)
+
+-- Helper Function for Smooth UI Fading
+local function FadeUIWindow(frame, show, duration, style)
+    duration = duration or 0.3
+    style = style or Enum.EasingStyle.Quad
+    
+    if show then
+        frame.Visible = true
+        frame.BackgroundTransparency = 1
+        TweenService:Create(frame, TweenInfo.new(duration, style, Enum.EasingDirection.Out), {
+            BackgroundTransparency = 0.1
+        }):Play()
+    else
+        local tween = TweenService:Create(frame, TweenInfo.new(duration, style, Enum.EasingDirection.In), {
+            BackgroundTransparency = 1
+        })
+        tween:Play()
+        tween.Completed:Connect(function()
+            frame.Visible = false
+        end)
+    end
+end
+
+-- Function to Create the AI UI Panel with Executor Tab
+local function CreateAIWindow(parent, onCloseCallback)
+    local aiFrame = Instance.new("Frame")
+    aiFrame.Name = "AIGeneratorWindow"
+    aiFrame.Size = UDim2.new(0, 360, 0, 260)
+    aiFrame.Position = UDim2.new(0.5, -180, 0.5, -130)
+    aiFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    aiFrame.BorderSizePixel = 0
+    aiFrame.Parent = parent
+    
+    Instance.new("UICorner", aiFrame).CornerRadius = UDim.new(0, 10)
+    
+    -- Title Bar
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -35, 0, 25)
+    titleLabel.Position = UDim2.new(0, 10, 0, 5)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "⚡ Groq AI Script Generator"
+    titleLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+    titleLabel.TextSize = 14
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = aiFrame
+    
+    -- Close Button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 25, 0, 25)
+    closeBtn.Position = UDim2.new(1, -30, 0, 5)
+    closeBtn.BackgroundTransparency = 1
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.fromRGB(200, 70, 70)
+    closeBtn.TextSize = 16
+    closeBtn.Font = Enum.Font.SourceSansBold
+    closeBtn.Parent = aiFrame
+
+    -- Tab Switcher Frame
+    local tabContainer = Instance.new("Frame")
+    tabContainer.Size = UDim2.new(1, -20, 0, 28)
+    tabContainer.Position = UDim2.new(0, 10, 0, 32)
+    tabContainer.BackgroundTransparency = 1
+    tabContainer.Parent = aiFrame
+
+    local aiTabBtn = Instance.new("TextButton")
+    aiTabBtn.Size = UDim2.new(0.48, 0, 1, 0)
+    aiTabBtn.Position = UDim2.new(0, 0, 0, 0)
+    aiTabBtn.BackgroundColor3 = Color3.fromRGB(15, 125, 235)
+    aiTabBtn.Text = "AI Assistant"
+    aiTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    aiTabBtn.Font = Enum.Font.SourceSansBold
+    aiTabBtn.TextSize = 13
+    aiTabBtn.Parent = tabContainer
+    Instance.new("UICorner", aiTabBtn).CornerRadius = UDim.new(0, 6)
+
+    local execTabBtn = Instance.new("TextButton")
+    execTabBtn.Size = UDim2.new(0.48, 0, 1, 0)
+    execTabBtn.Position = UDim2.new(0.52, 0, 0, 0)
+    execTabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 48)
+    execTabBtn.Text = "Executor Tab"
+    execTabBtn.TextColor3 = Color3.fromRGB(180, 180, 200)
+    execTabBtn.Font = Enum.Font.SourceSansBold
+    execTabBtn.TextSize = 13
+    execTabBtn.Parent = tabContainer
+    Instance.new("UICorner", execTabBtn).CornerRadius = UDim.new(0, 6)
+
+    -- AI TAB CONTENT
+    local aiContentFrame = Instance.new("Frame")
+    aiContentFrame.Size = UDim2.new(1, -20, 1, -70)
+    aiContentFrame.Position = UDim2.new(0, 10, 0, 65)
+    aiContentFrame.BackgroundTransparency = 1
+    aiContentFrame.Parent = aiFrame
+
+    local outputScroll = Instance.new("ScrollingFrame")
+    outputScroll.Size = UDim2.new(1, 0, 0, 115)
+    outputScroll.Position = UDim2.new(0, 0, 0, 0)
+    outputScroll.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    outputScroll.BorderSizePixel = 0
+    outputScroll.Parent = aiContentFrame
+    Instance.new("UICorner", outputScroll).CornerRadius = UDim.new(0, 6)
+    
+    local outputText = Instance.new("TextLabel")
+    outputText.Size = UDim2.new(1, -10, 1, -10)
+    outputText.Position = UDim2.new(0, 5, 0, 5)
+    outputText.BackgroundTransparency = 1
+    outputText.Text = "Type any script idea below (e.g., 'gui with walkspeed slider and jump power') and click Send."
+    outputText.TextColor3 = Color3.fromRGB(180, 180, 200)
+    outputText.TextSize = 12
+    outputText.Font = Enum.Font.SourceSans
+    outputText.TextWrapped = true
+    outputText.TextYAlignment = Enum.TextYAlignment.Top
+    outputText.TextXAlignment = Enum.TextXAlignment.Left
+    outputText.Parent = outputScroll
+
+    local promptInput = Instance.new("TextBox")
+    promptInput.Size = UDim2.new(1, -80, 0, 32)
+    promptInput.Position = UDim2.new(0, 0, 1, -32)
+    promptInput.BackgroundColor3 = Color3.fromRGB(35, 35, 48)
+    promptInput.PlaceholderText = "Type prompt here..."
+    promptInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 140)
+    promptInput.Text = ""
+    promptInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    promptInput.TextSize = 13
+    promptInput.Font = Enum.Font.SourceSans
+    promptInput.ClearTextOnFocus = false
+    promptInput.Parent = aiContentFrame
+    Instance.new("UICorner", promptInput).CornerRadius = UDim.new(0, 6)
+
+    local generateBtn = Instance.new("TextButton")
+    generateBtn.Size = UDim2.new(0, 75, 0, 32)
+    generateBtn.Position = UDim2.new(1, -75, 1, -32)
+    generateBtn.BackgroundColor3 = Color3.fromRGB(15, 125, 235)
+    generateBtn.Text = "Send"
+    generateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    generateBtn.TextSize = 13
+    generateBtn.Font = Enum.Font.SourceSansBold
+    generateBtn.Parent = aiContentFrame
+    Instance.new("UICorner", generateBtn).CornerRadius = UDim.new(0, 6)
+
+    -- EXECUTOR TAB CONTENT
+    local execContentFrame = Instance.new("Frame")
+    execContentFrame.Size = UDim2.new(1, -20, 1, -70)
+    execContentFrame.Position = UDim2.new(0, 10, 0, 65)
+    execContentFrame.BackgroundTransparency = 1
+    execContentFrame.Visible = false
+    execContentFrame.Parent = aiFrame
+
+    local scriptBoxScroll = Instance.new("ScrollingFrame")
+    scriptBoxScroll.Size = UDim2.new(1, 0, 0, 115)
+    scriptBoxScroll.Position = UDim2.new(0, 0, 0, 0)
+    scriptBoxScroll.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    scriptBoxScroll.BorderSizePixel = 0
+    scriptBoxScroll.Parent = execContentFrame
+    Instance.new("UICorner", scriptBoxScroll).CornerRadius = UDim.new(0, 6)
+
+    local scriptTextBox = Instance.new("TextBox")
+    scriptTextBox.Size = UDim2.new(1, -10, 1, -10)
+    scriptTextBox.Position = UDim2.new(0, 5, 0, 5)
+    scriptTextBox.BackgroundTransparency = 1
+    scriptTextBox.Text = "-- Generated code will auto-paste here..."
+    scriptTextBox.TextColor3 = Color3.fromRGB(0, 230, 120)
+    scriptTextBox.TextSize = 12
+    scriptTextBox.Font = Enum.Font.Code
+    scriptTextBox.TextXAlignment = Enum.TextXAlignment.Left
+    scriptTextBox.TextYAlignment = Enum.TextYAlignment.Top
+    scriptTextBox.MultiLine = true
+    scriptTextBox.ClearTextOnFocus = false
+    scriptTextBox.Parent = scriptBoxScroll
+
+    local runBtn = Instance.new("TextButton")
+    runBtn.Size = UDim2.new(0.48, 0, 0, 32)
+    runBtn.Position = UDim2.new(0, 0, 1, -32)
+    runBtn.BackgroundColor3 = Color3.fromRGB(45, 185, 105)
+    runBtn.Text = "Execute Script"
+    runBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    runBtn.Font = Enum.Font.SourceSansBold
+    runBtn.TextSize = 13
+    runBtn.Parent = execContentFrame
+    Instance.new("UICorner", runBtn).CornerRadius = UDim.new(0, 6)
+
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.new(0.48, 0, 0, 32)
+    copyBtn.Position = UDim2.new(0.52, 0, 1, -32)
+    copyBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 48)
+    copyBtn.Text = "Copy Script"
+    copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    copyBtn.Font = Enum.Font.SourceSansBold
+    copyBtn.TextSize = 13
+    copyBtn.Parent = execContentFrame
+    Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 6)
+
+    -- TAB SWITCHING LOGIC
+    local function SwitchTab(toExec)
+        aiContentFrame.Visible = not toExec
+        execContentFrame.Visible = toExec
+        if toExec then
+            execTabBtn.BackgroundColor3 = Color3.fromRGB(15, 125, 235)
+            execTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            aiTabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 48)
+            aiTabBtn.TextColor3 = Color3.fromRGB(180, 180, 200)
+        else
+            aiTabBtn.BackgroundColor3 = Color3.fromRGB(15, 125, 235)
+            aiTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            execTabBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 48)
+            execTabBtn.TextColor3 = Color3.fromRGB(180, 180, 200)
+        end
+    end
+
+    aiTabBtn.MouseButton1Click:Connect(function() SwitchTab(false) end)
+    execTabBtn.MouseButton1Click:Connect(function() SwitchTab(true) end)
+
+    -- GROQ API REQUEST HANDLER
+    local function HandleGeneration()
+        local query = promptInput.Text
+        if query == "" then return end
+
+        outputText.Text = "Generating custom script via Groq AI..."
+        generateBtn.Text = "..."
+
+        task.spawn(function()
+            if not httpRequest then
+                outputText.Text = "Error: Your executor does not support HTTP requests (request/http_request)."
+                generateBtn.Text = "Send"
+                return
+            end
+
+            local payload = HttpService:JSONEncode({
+                model = "llama-3.3-70b-versatile",
+                messages = {
+                    {
+                        role = "system",
+                        content = "You are an expert Roblox Luau developer. Respond ONLY with valid, raw executable Luau code. Do NOT wrap the response in markdown blocks like ```lua or ```. Do NOT add conversational intro text."
+                    },
+                    {
+                        role = "user",
+                        content = "Write a complete Roblox client script for: " .. query
+                    }
+                },
+                temperature = 0.2
+            })
+
+            local success, response = pcall(function()
+                return httpRequest({
+                    Url = GROQ_API_URL,
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["Authorization"] = "Bearer " .. GROQ_API_KEY
+                    },
+                    Body = payload
+                })
+            end)
+
+            if success and response and response.Body then
+                local decodeSuccess, decoded = pcall(function()
+                    return HttpService:JSONDecode(response.Body)
+                end)
+
+                if decodeSuccess and decoded.choices and decoded.choices[1] and decoded.choices[1].message then
+                    local code = decoded.choices[1].message.content
+                    code = code:gsub("^```%w*\n?", ""):gsub("\n?```$", "") -- Strip markdown block tags if included
+                    
+                    scriptTextBox.Text = code
+                    outputText.Text = "[Success]: Code generated and pasted to Executor Tab!"
+                    generateBtn.Text = "Send"
+                    promptInput.Text = ""
+                    
+                    SwitchTab(true)
+                else
+                    outputText.Text = "Error parsing AI response. Please check your API key."
+                    generateBtn.Text = "Send"
+                end
+            else
+                outputText.Text = "HTTP Error: Failed to communicate with Groq API."
+                generateBtn.Text = "Send"
+            end
+        end)
+    end
+    
+    generateBtn.MouseButton1Click:Connect(HandleGeneration)
+
+    runBtn.MouseButton1Click:Connect(function()
+        local code = scriptTextBox.Text
+        if code ~= "" and loadstring then
+            local func, err = loadstring(code)
+            if func then
+                task.spawn(func)
+                runBtn.Text = "EXECUTED!"
+            else
+                runBtn.Text = "ERROR!"
+                warn("Execution error: " .. tostring(err))
+            end
+            task.wait(1.2)
+            runBtn.Text = "Execute Script"
+        end
+    end)
+
+    copyBtn.MouseButton1Click:Connect(function()
+        if setclipboard then
+            setclipboard(scriptTextBox.Text)
+            copyBtn.Text = "COPIED!"
+            task.wait(1.2)
+            copyBtn.Text = "Copy Script"
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        FadeUIWindow(aiFrame, false)
+        task.wait(0.35)
+        aiFrame:Destroy()
+        if onCloseCallback then onCloseCallback() end
+    end)
+    
+    FadeUIWindow(aiFrame, true)
+    return aiFrame
+end
+
+-- Integration Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AIExecutorGui"
+screenGui.Parent = CoreGui
+
+local activeAiWindow = nil
+
+local aiToggleBtn = Instance.new("TextButton")
+aiToggleBtn.Size = UDim2.new(0, 35, 0, 35)
+aiToggleBtn.Position = UDim2.new(0, 15, 0.5, -17)
+aiToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+aiToggleBtn.Text = "🤖"
+aiToggleBtn.TextSize = 18
+aiToggleBtn.Parent = screenGui
+Instance.new("UICorner", aiToggleBtn).CornerRadius = UDim.new(0, 8)
+
+aiToggleBtn.MouseButton1Click:Connect(function()
+    if activeAiWindow and activeAiWindow.Parent then
+        FadeUIWindow(activeAiWindow, false)
+        task.wait(0.35)
+        if activeAiWindow and activeAiWindow.Parent then activeAiWindow:Destroy() end
+        activeAiWindow = nil
+    else
+        activeAiWindow = CreateAIWindow(screenGui, function()
+            activeAiWindow = nil
+        end)
+    end
+end)
