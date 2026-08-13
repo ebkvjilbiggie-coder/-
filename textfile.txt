@@ -4,7 +4,7 @@ local CoreGui = game:GetService("CoreGui")
 local HttpService = game:GetService("HttpService")
 
 -- CONFIGURATION
-local GROQ_API_KEY = "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"
+local GROQ_API_KEY = "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"
 local GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 -- Executor HTTP Request Resolver
